@@ -8,7 +8,6 @@ import org.http4k.core.Response
 import org.http4k.core.Status.Companion.OK
 import org.http4k.server.Jetty
 import org.http4k.server.asServer
-import java.lang.IllegalStateException
 import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 import kotlin.system.measureTimeMillis
@@ -22,7 +21,7 @@ class App {
     private val logger: Logger = Logger.getLogger(javaClass.name)
 
     fun startServer() {
-        val app: HttpHandler = {request: Request ->
+        val app: HttpHandler = { request: Request ->
             handleRequest(request)
         }
         app.asServer(Jetty(8080)).start()
@@ -38,10 +37,14 @@ class App {
         val proxyUrl = System.getenv("PROXY_URL")
         val waitTime = System.getenv("WAIT_TIME")
 
+        if (proxyUrl == null && waitTime == null) {
+            logger.warning("Missing environment values for PROXY_URL or WAIT_TIME")
+        }
+
         return when {
             proxyUrl != null -> callProxy(proxyUrl)
-            waitTime != null -> doSleepAndRespond( waitTime.toLong())
-            else -> throw IllegalStateException("Server is misconfigured. Missing environment variables")
+            waitTime != null -> doSleepAndRespond(waitTime.toLong())
+            else -> Response(OK).body("Misconfigured") // Just want the health check to work.
         }
     }
 
