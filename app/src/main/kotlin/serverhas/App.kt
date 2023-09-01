@@ -3,11 +3,13 @@ package serverhas
 import com.google.gson.Gson
 import okhttp3.OkHttpClient
 import org.http4k.core.HttpHandler
+import org.http4k.core.MemoryResponse
 import org.http4k.core.Request
 import org.http4k.core.Response
 import org.http4k.core.Status.Companion.OK
 import org.http4k.server.Jetty
 import org.http4k.server.asServer
+import java.lang.IllegalStateException
 import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
 import kotlin.system.measureTimeMillis
@@ -16,15 +18,22 @@ fun main() {
     App().startServer()
 }
 
+data class Response(val message: String)
+
 class App {
 
     private val logger: Logger = Logger.getLogger(javaClass.name)
+
+    fun getPort(): Int {
+        val port = System.getenv("PORT")
+        return port?.toInt() ?: 8080
+    }
 
     fun startServer() {
         val app: HttpHandler = { request: Request ->
             handleRequest(request)
         }
-        app.asServer(Jetty(8080)).start()
+        app.asServer(Jetty(getPort())).start()
     }
 
     private val gson = Gson()
@@ -44,7 +53,7 @@ class App {
         return when {
             proxyUrl != null -> callProxy(proxyUrl)
             waitTime != null -> doSleepAndRespond(waitTime.toLong())
-            else -> Response(OK).body("Misconfigured") // Just want the health check to work.
+            else -> throw IllegalStateException("You need to set the environment variable for either PROXY_URL or the WAIT_TIME")
         }
     }
 
@@ -52,16 +61,20 @@ class App {
         logger.info("Proxying request to $url")
         val stopwatch = Stopwatch()
         stopwatch.start()
+
         val httpRequest = okhttp3.Request.Builder()
             .url(url)
             .build()
 
-        val response = httpClient.newCall(httpRequest).execute()
-        val body = response.body?.string() ?: ""
+        val serverResponse = httpClient.newCall(httpRequest).execute()
+        val body = serverResponse.body?.string() ?: ""
         val elapsedTime = stopwatch.elapsedMillis()
+
         logger.info("Call to fetch data took $elapsedTime ms")
 
-        return Response(OK).body(body)
+        val response = Response(OK)
+        response.header("Content-Type", "application/json")
+        return response.body(body)
     }
 
     private fun doSleepAndRespond(millis: Long): Response {
@@ -71,9 +84,13 @@ class App {
         }
         logger.info("Just woke up after sleeping for $elapsedTime ms")
 
-        val jsonResponse = gson.toJson("Hello, World!")
+        val jsonResponse = gson.toJson(Response("Hello, world"))
 
-        return Response(OK).body(jsonResponse)
+        val response = MemoryResponse(
+            status = OK,
+            headers = listOf("Content-Type" to "application/json")
+        )
+        return response.body(jsonResponse)
     }
 
     class Stopwatch {
